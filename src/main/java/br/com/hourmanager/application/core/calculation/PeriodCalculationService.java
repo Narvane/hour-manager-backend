@@ -1,10 +1,9 @@
 package br.com.hourmanager.application.core.calculation;
 
-import br.com.hourmanager.application.core.domains.HourAdjustment;
 import br.com.hourmanager.application.core.domains.HourEntry;
 import br.com.hourmanager.application.core.period.PeriodBounds;
-import br.com.hourmanager.application.ports.output.repositories.HourAdjustmentRepository;
 import br.com.hourmanager.application.ports.output.repositories.HourEntryRepository;
+import br.com.hourmanager.application.ports.output.repositories.PeriodAdjustmentRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -16,41 +15,35 @@ import java.util.Set;
 
 /**
  * Serviço central de cálculo do período.
- * Tudo é derivado: lê entradas e ajustes no intervalo, soma e retorna totais e saldo.
- * Nenhum resultado é persistido.
+ * Total trabalhado = entradas; total ajustado = um valor por período (slider); saldo = trabalhado + ajustado.
+ * Ajuste não aparece nas barras semanais.
  */
 public class PeriodCalculationService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private final HourEntryRepository hourEntryRepository;
-    private final HourAdjustmentRepository hourAdjustmentRepository;
+    private final PeriodAdjustmentRepository periodAdjustmentRepository;
 
     public PeriodCalculationService(HourEntryRepository hourEntryRepository,
-                                   HourAdjustmentRepository hourAdjustmentRepository) {
+                                   PeriodAdjustmentRepository periodAdjustmentRepository) {
         this.hourEntryRepository = hourEntryRepository;
-        this.hourAdjustmentRepository = hourAdjustmentRepository;
+        this.periodAdjustmentRepository = periodAdjustmentRepository;
     }
 
     /**
-     * Calcula total trabalhado, total ajustado e saldo do período.
-     *
-     * @param bounds início e fim do período (inclusive)
-     * @return totais e saldo; nunca null
+     * Calcula total trabalhado (entradas), total ajustado (valor do período) e saldo.
      */
     public PeriodBalance compute(PeriodBounds bounds) {
         List<HourEntry> entries = hourEntryRepository.findByEntryDateBetween(bounds.getStart(), bounds.getEnd());
-        List<HourAdjustment> adjustments = hourAdjustmentRepository.findByAdjustmentDateBetween(bounds.getStart(), bounds.getEnd());
 
         BigDecimal totalWorked = entries.stream()
                 .map(HourEntry::getHours)
                 .filter(h -> h != null)
                 .reduce(ZERO, BigDecimal::add);
 
-        BigDecimal totalAdjusted = adjustments.stream()
-                .map(HourAdjustment::getDeltaHours)
-                .filter(d -> d != null)
-                .reduce(ZERO, BigDecimal::add);
+        BigDecimal totalAdjusted = periodAdjustmentRepository.getAdjustment(bounds.getStart(), bounds.getEnd())
+                .orElse(ZERO);
 
         return PeriodBalance.of(totalWorked, totalAdjusted);
     }
@@ -70,7 +63,6 @@ public class PeriodCalculationService {
      */
     public PeriodCalculationResult computeWithWeeklyBreakdown(PeriodBounds bounds, BigDecimal expectedWeeklyHours, Set<LocalDate> holidays) {
         List<HourEntry> entries = hourEntryRepository.findByEntryDateBetween(bounds.getStart(), bounds.getEnd());
-        List<HourAdjustment> adjustments = hourAdjustmentRepository.findByAdjustmentDateBetween(bounds.getStart(), bounds.getEnd());
 
         List<PeriodWeekSegments.SegmentBounds> segments = PeriodWeekSegments.segmentsWithin(bounds);
         List<WeekInPeriod> weeks = new ArrayList<>();
@@ -84,33 +76,17 @@ public class PeriodCalculationService {
                     .map(HourEntry::getHours)
                     .filter(h -> h != null)
                     .reduce(ZERO, BigDecimal::add);
-            BigDecimal adjusted = adjustments.stream()
-                    .filter(a -> !a.getAdjustmentDate().isBefore(segStart) && !a.getAdjustmentDate().isAfter(segEnd))
-                    .map(HourAdjustment::getDeltaHours)
-                    .filter(x -> x != null)
-                    .reduce(ZERO, BigDecimal::add);
-            BigDecimal balance = worked.add(adjusted);
-
-            long segmentDays = ChronoUnit.DAYS.between(segStart, segEnd) + 1;
-            BigDecimal totalSegmentHours = BigDecimal.valueOf(24 * segmentDays);
-            BigDecimal hoursAvailable = ZERO;
-            if (expectedWeeklyHours != null && expectedWeeklyHours.compareTo(ZERO) > 0) {
-                hoursAvailable = expectedWeeklyHours
-                        .divide(HOURS_IN_FULL_WEEK, SCALE + 2, RoundingMode.HALF_UP)
-                        .multiply(totalSegmentHours)
-                        .setScale(SCALE, RoundingMode.HALF_UP);
-            }
-
+            // Ajuste não aparece por semana; só no total do período
             weeks.add(WeekInPeriod.builder()
                     .weekStart(segStart)
                     .weekEnd(segEnd)
                     .totalWorked(worked)
-                    .totalAdjusted(adjusted)
-                    .balance(balance)
+                    .totalAdjusted(ZERO)
+                    .balance(worked)
                     .workingDaysCount(0)
-                    .hoursAvailable(hoursAvailable)
+                    .hoursAvailable(computeHoursAvailable(expectedWeeklyHours, segStart, segEnd))
                     .baseWeeklyHours(expectedWeeklyHours != null ? expectedWeeklyHours : ZERO)
-                    .totalSegmentHours(totalSegmentHours)
+                    .totalSegmentHours(BigDecimal.valueOf(24 * (ChronoUnit.DAYS.between(segStart, segEnd) + 1)))
                     .build());
         }
 
@@ -118,15 +94,25 @@ public class PeriodCalculationService {
                 .map(HourEntry::getHours)
                 .filter(h -> h != null)
                 .reduce(ZERO, BigDecimal::add);
-        BigDecimal totalAdjusted = adjustments.stream()
-                .map(HourAdjustment::getDeltaHours)
-                .filter(x -> x != null)
-                .reduce(ZERO, BigDecimal::add);
+        BigDecimal totalAdjusted = periodAdjustmentRepository.getAdjustment(bounds.getStart(), bounds.getEnd())
+                .orElse(ZERO);
         PeriodBalance summary = PeriodBalance.of(totalWorked, totalAdjusted);
 
         return PeriodCalculationResult.builder()
                 .summary(summary)
                 .weeks(weeks)
                 .build();
+    }
+
+    private BigDecimal computeHoursAvailable(BigDecimal expectedWeeklyHours, LocalDate segStart, LocalDate segEnd) {
+        long segmentDays = ChronoUnit.DAYS.between(segStart, segEnd) + 1;
+        BigDecimal totalSegmentHours = BigDecimal.valueOf(24 * segmentDays);
+        if (expectedWeeklyHours == null || expectedWeeklyHours.compareTo(ZERO) <= 0) {
+            return ZERO;
+        }
+        return expectedWeeklyHours
+                .divide(HOURS_IN_FULL_WEEK, SCALE + 2, RoundingMode.HALF_UP)
+                .multiply(totalSegmentHours)
+                .setScale(SCALE, RoundingMode.HALF_UP);
     }
 }

@@ -3,10 +3,12 @@ package br.com.hourmanager.config;
 import br.com.hourmanager.adapters.output.repositories.HolidayOverrideJpaAdapter;
 import br.com.hourmanager.adapters.output.repositories.HourAdjustmentJpaAdapter;
 import br.com.hourmanager.adapters.output.repositories.HourEntryJpaAdapter;
+import br.com.hourmanager.adapters.output.repositories.PeriodAdjustmentJpaAdapter;
 import br.com.hourmanager.adapters.output.repositories.SystemConfigJpaAdapter;
 import br.com.hourmanager.adapters.output.repositories.jpa.HolidayOverrideJpaRepository;
 import br.com.hourmanager.adapters.output.repositories.jpa.HourAdjustmentJpaRepository;
 import br.com.hourmanager.adapters.output.repositories.jpa.HourEntryJpaRepository;
+import br.com.hourmanager.adapters.output.repositories.jpa.PeriodAdjustmentJpaRepository;
 import br.com.hourmanager.adapters.output.repositories.jpa.SystemConfigJpaRepository;
 import br.com.hourmanager.application.core.calculation.PeriodCalculationService;
 import br.com.hourmanager.application.core.projection.DashboardProjectionService;
@@ -19,6 +21,7 @@ import br.com.hourmanager.application.ports.input.SystemConfigInputGateway;
 import br.com.hourmanager.application.ports.output.repositories.HolidayOverrideRepository;
 import br.com.hourmanager.application.ports.output.repositories.HourAdjustmentRepository;
 import br.com.hourmanager.application.ports.output.repositories.HourEntryRepository;
+import br.com.hourmanager.application.ports.output.repositories.PeriodAdjustmentRepository;
 import br.com.hourmanager.application.ports.output.repositories.SystemConfigRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -47,6 +50,11 @@ public class HourManagerConfig {
     }
 
     @Bean
+    public PeriodAdjustmentRepository periodAdjustmentRepository(PeriodAdjustmentJpaRepository jpaRepository) {
+        return new PeriodAdjustmentJpaAdapter(jpaRepository);
+    }
+
+    @Bean
     public SystemConfigInputGateway saveSystemConfigUseCase(SystemConfigRepository systemConfigRepository) {
         return new SaveSystemConfigUseCase(systemConfigRepository);
     }
@@ -63,8 +71,8 @@ public class HourManagerConfig {
 
     @Bean
     public PeriodCalculationService periodCalculationService(HourEntryRepository hourEntryRepository,
-                                                            HourAdjustmentRepository hourAdjustmentRepository) {
-        return new PeriodCalculationService(hourEntryRepository, hourAdjustmentRepository);
+                                                            PeriodAdjustmentRepository periodAdjustmentRepository) {
+        return new PeriodCalculationService(hourEntryRepository, periodAdjustmentRepository);
     }
 
     @Bean

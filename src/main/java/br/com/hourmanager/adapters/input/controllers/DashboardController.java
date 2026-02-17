@@ -6,11 +6,13 @@ import br.com.hourmanager.application.core.period.PeriodBounds;
 import br.com.hourmanager.application.core.projection.DashboardProjection;
 import br.com.hourmanager.application.core.projection.DashboardProjectionService;
 import br.com.hourmanager.application.ports.output.repositories.HolidayOverrideRepository;
+import br.com.hourmanager.application.ports.output.repositories.PeriodAdjustmentRepository;
 import br.com.hourmanager.application.ports.output.repositories.SystemConfigRepository;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.Map;
@@ -26,13 +28,16 @@ public class DashboardController {
     private final SystemConfigRepository systemConfigRepository;
     private final DashboardProjectionService dashboardProjectionService;
     private final HolidayOverrideRepository holidayOverrideRepository;
+    private final PeriodAdjustmentRepository periodAdjustmentRepository;
 
     public DashboardController(SystemConfigRepository systemConfigRepository,
                                DashboardProjectionService dashboardProjectionService,
-                               HolidayOverrideRepository holidayOverrideRepository) {
+                               HolidayOverrideRepository holidayOverrideRepository,
+                               PeriodAdjustmentRepository periodAdjustmentRepository) {
         this.systemConfigRepository = systemConfigRepository;
         this.dashboardProjectionService = dashboardProjectionService;
         this.holidayOverrideRepository = holidayOverrideRepository;
+        this.periodAdjustmentRepository = periodAdjustmentRepository;
     }
 
     /**
@@ -78,6 +83,32 @@ public class DashboardController {
         }
         holidayOverrideRepository.setOverride(request.getDate(), request.isHoliday());
         return getProjection(null);
+    }
+
+    /**
+     * Define as horas ajustadas do período atual (slider). Body: { "adjustedHours": 10.5 }
+     */
+    @PutMapping("/period-adjustment")
+    public ResponseEntity<DashboardProjection> setPeriodAdjustment(@RequestBody PeriodAdjustmentRequest request) {
+        return systemConfigRepository.findCurrent()
+                .map(config -> {
+                    PeriodBounds bounds = ClosurePeriodEngine.computePeriodContaining(
+                            LocalDate.now(),
+                            config.getClosureStartDay(),
+                            config.getClosureEndDay()
+                    );
+                    BigDecimal value = request.getAdjustedHours() != null ? request.getAdjustedHours() : BigDecimal.ZERO;
+                    periodAdjustmentRepository.setAdjustment(bounds.getStart(), bounds.getEnd(), value);
+                    return getProjection(null);
+                })
+                .orElse(ResponseEntity.noContent().build());
+    }
+
+    @lombok.Data
+    @lombok.NoArgsConstructor
+    @lombok.AllArgsConstructor
+    public static class PeriodAdjustmentRequest {
+        private BigDecimal adjustedHours;
     }
 
     @lombok.Data

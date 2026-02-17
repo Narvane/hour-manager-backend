@@ -1,10 +1,9 @@
 package br.com.hourmanager.application.core.calculation;
 
-import br.com.hourmanager.application.core.domains.HourAdjustment;
 import br.com.hourmanager.application.core.domains.HourEntry;
 import br.com.hourmanager.application.core.period.PeriodBounds;
-import br.com.hourmanager.application.ports.output.repositories.HourAdjustmentRepository;
 import br.com.hourmanager.application.ports.output.repositories.HourEntryRepository;
+import br.com.hourmanager.application.ports.output.repositories.PeriodAdjustmentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -16,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,13 +33,13 @@ class PeriodCalculationServiceTest {
     private HourEntryRepository hourEntryRepository;
 
     @Mock
-    private HourAdjustmentRepository hourAdjustmentRepository;
+    private PeriodAdjustmentRepository periodAdjustmentRepository;
 
     private PeriodCalculationService service;
 
     @BeforeEach
     void setUp() {
-        service = new PeriodCalculationService(hourEntryRepository, hourAdjustmentRepository);
+        service = new PeriodCalculationService(hourEntryRepository, periodAdjustmentRepository);
     }
 
     @Nested
@@ -50,7 +50,7 @@ class PeriodCalculationServiceTest {
         @DisplayName("Sem entradas nem ajustes -> totais e saldo zero")
         void noData_returnsZeros() {
             when(hourEntryRepository.findByEntryDateBetween(any(), any())).thenReturn(List.of());
-            when(hourAdjustmentRepository.findByAdjustmentDateBetween(any(), any())).thenReturn(List.of());
+            when(periodAdjustmentRepository.getAdjustment(any(), any())).thenReturn(Optional.empty());
 
             PeriodBalance result = service.compute(BOUNDS);
 
@@ -70,7 +70,7 @@ class PeriodCalculationServiceTest {
             when(hourEntryRepository.findByEntryDateBetween(any(), any())).thenReturn(List.of(
                     entry(START, "8")
             ));
-            when(hourAdjustmentRepository.findByAdjustmentDateBetween(any(), any())).thenReturn(List.of());
+            when(periodAdjustmentRepository.getAdjustment(any(), any())).thenReturn(Optional.empty());
 
             PeriodBalance result = service.compute(BOUNDS);
 
@@ -87,7 +87,7 @@ class PeriodCalculationServiceTest {
                     entry(LocalDate.of(2025, 1, 23), "6.5"),
                     entry(LocalDate.of(2025, 2, 10), "8")
             ));
-            when(hourAdjustmentRepository.findByAdjustmentDateBetween(any(), any())).thenReturn(List.of());
+            when(periodAdjustmentRepository.getAdjustment(any(), any())).thenReturn(Optional.empty());
 
             PeriodBalance result = service.compute(BOUNDS);
 
@@ -105,9 +105,7 @@ class PeriodCalculationServiceTest {
         @DisplayName("Ajuste positivo (saldo inicial) -> total ajustado e saldo iguais")
         void singlePositiveAdjustment() {
             when(hourEntryRepository.findByEntryDateBetween(any(), any())).thenReturn(List.of());
-            when(hourAdjustmentRepository.findByAdjustmentDateBetween(any(), any())).thenReturn(List.of(
-                    adjustment(START, "40", "Saldo inicial")
-            ));
+            when(periodAdjustmentRepository.getAdjustment(any(), any())).thenReturn(Optional.of(new BigDecimal("40")));
 
             PeriodBalance result = service.compute(BOUNDS);
 
@@ -120,9 +118,7 @@ class PeriodCalculationServiceTest {
         @DisplayName("Ajuste negativo (correção)")
         void singleNegativeAdjustment() {
             when(hourEntryRepository.findByEntryDateBetween(any(), any())).thenReturn(List.of());
-            when(hourAdjustmentRepository.findByAdjustmentDateBetween(any(), any())).thenReturn(List.of(
-                    adjustment(LocalDate.of(2025, 1, 25), "-2", "Correção")
-            ));
+            when(periodAdjustmentRepository.getAdjustment(any(), any())).thenReturn(Optional.of(new BigDecimal("-2")));
 
             PeriodBalance result = service.compute(BOUNDS);
 
@@ -135,10 +131,7 @@ class PeriodCalculationServiceTest {
         @DisplayName("Vários ajustes (positivos e negativos)")
         void multipleAdjustments() {
             when(hourEntryRepository.findByEntryDateBetween(any(), any())).thenReturn(List.of());
-            when(hourAdjustmentRepository.findByAdjustmentDateBetween(any(), any())).thenReturn(List.of(
-                    adjustment(START, "40", "Saldo inicial"),
-                    adjustment(LocalDate.of(2025, 1, 25), "-2", "Correção")
-            ));
+            when(periodAdjustmentRepository.getAdjustment(any(), any())).thenReturn(Optional.of(new BigDecimal("38")));
 
             PeriodBalance result = service.compute(BOUNDS);
 
@@ -160,10 +153,7 @@ class PeriodCalculationServiceTest {
                     entry(LocalDate.of(2025, 1, 23), "6.5"),
                     entry(LocalDate.of(2025, 2, 10), "8")
             ));
-            when(hourAdjustmentRepository.findByAdjustmentDateBetween(any(), any())).thenReturn(List.of(
-                    adjustment(START, "40", "Saldo inicial"),
-                    adjustment(LocalDate.of(2025, 1, 25), "-2", "Correção")
-            ));
+            when(periodAdjustmentRepository.getAdjustment(any(), any())).thenReturn(Optional.of(new BigDecimal("38")));
 
             PeriodBalance result = service.compute(BOUNDS);
 
@@ -179,9 +169,7 @@ class PeriodCalculationServiceTest {
                     entry(START, "7.25"),
                     entry(LocalDate.of(2025, 1, 22), "4.75")
             ));
-            when(hourAdjustmentRepository.findByAdjustmentDateBetween(any(), any())).thenReturn(List.of(
-                    adjustment(START, "0.5", "Ajuste fino")
-            ));
+            when(periodAdjustmentRepository.getAdjustment(any(), any())).thenReturn(Optional.of(new BigDecimal("0.5")));
 
             PeriodBalance result = service.compute(BOUNDS);
 
@@ -212,15 +200,6 @@ class PeriodCalculationServiceTest {
                 .entryDate(date)
                 .hours(new BigDecimal(hours))
                 .description("")
-                .build();
-    }
-
-    private static HourAdjustment adjustment(LocalDate date, String deltaHours, String description) {
-        return HourAdjustment.builder()
-                .id(UUID.randomUUID())
-                .adjustmentDate(date)
-                .deltaHours(new BigDecimal(deltaHours))
-                .description(description)
                 .build();
     }
 }

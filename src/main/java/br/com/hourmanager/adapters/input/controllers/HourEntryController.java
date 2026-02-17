@@ -65,11 +65,41 @@ public class HourEntryController {
         return ResponseEntity.ok(entries.stream().map(HourEntryController::toResponse).toList());
     }
 
+    /**
+     * Listagem paginada por período. Requer start e end (ISO date). page 0-based, size padrão 20.
+     */
+    @GetMapping("/paged")
+    public ResponseEntity<EntriesPageResponse> listPaged(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        if (size < 1 || size > 100) size = 20;
+        var result = hourEntryRepository.findPageByEntryDateBetween(start, end, page, size);
+        var response = new EntriesPageResponse(
+                result.content().stream().map(HourEntryController::toResponse).toList(),
+                result.totalElements(),
+                result.totalPages(),
+                result.number(),
+                result.size()
+        );
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<HourEntryResponse> getById(@PathVariable UUID id) {
         return hourEntryRepository.findById(id)
                 .map(entry -> ResponseEntity.ok(toResponse(entry)))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteById(@PathVariable UUID id) {
+        if (!hourEntryRepository.findById(id).isPresent()) {
+            return ResponseEntity.notFound().build();
+        }
+        hourEntryRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
     private List<HourEntry> listByCurrentPeriod() {
@@ -93,4 +123,13 @@ public class HourEntryController {
                 .description(entry.getDescription())
                 .build();
     }
+
+    /** Resposta paginada de entradas. */
+    public record EntriesPageResponse(
+            List<HourEntryResponse> content,
+            long totalElements,
+            int totalPages,
+            int number,
+            int size
+    ) {}
 }

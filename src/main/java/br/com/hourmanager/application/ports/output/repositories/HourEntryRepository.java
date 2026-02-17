@@ -13,8 +13,15 @@ public interface HourEntryRepository {
 
     HourEntry save(HourEntry hourEntry);
 
+    void deleteById(UUID id);
+
     List<HourEntry> findAll();
 
     /** Para projeções: entradas dentro do período (inclusive). */
     List<HourEntry> findByEntryDateBetween(LocalDate start, LocalDate end);
+
+    /** Listagem paginada por período (mais recentes primeiro). */
+    HourEntryRepository.PageResult findPageByEntryDateBetween(LocalDate start, LocalDate end, int page, int size);
+
+    record PageResult(List<HourEntry> content, long totalElements, int totalPages, int number, int size) {}
 }

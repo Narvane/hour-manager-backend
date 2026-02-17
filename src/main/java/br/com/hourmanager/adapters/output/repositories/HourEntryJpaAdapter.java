@@ -5,6 +5,7 @@ import br.com.hourmanager.adapters.output.repositories.protocols.HourEntryEntity
 import br.com.hourmanager.application.core.domains.HourEntry;
 import br.com.hourmanager.application.ports.output.repositories.HourEntryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -19,6 +20,11 @@ public class HourEntryJpaAdapter implements HourEntryRepository {
     @Override
     public Optional<HourEntry> findById(UUID id) {
         return repository.findById(id).map(this::toDomain);
+    }
+
+    @Override
+    public void deleteById(UUID id) {
+        repository.deleteById(id);
     }
 
     @Override
@@ -45,6 +51,20 @@ public class HourEntryJpaAdapter implements HourEntryRepository {
         return repository.findByEntryDateBetweenOrderByEntryDateAsc(start, end).stream()
                 .map(this::toDomain)
                 .toList();
+    }
+
+    @Override
+    public HourEntryRepository.PageResult findPageByEntryDateBetween(LocalDate start, LocalDate end, int page, int size) {
+        var pageable = PageRequest.of(page, size);
+        var springPage = repository.findByEntryDateBetweenOrderByEntryDateDesc(start, end, pageable);
+        var content = springPage.getContent().stream().map(this::toDomain).toList();
+        return new HourEntryRepository.PageResult(
+                content,
+                springPage.getTotalElements(),
+                springPage.getTotalPages(),
+                springPage.getNumber(),
+                springPage.getSize()
+        );
     }
 
     private HourEntry toDomain(HourEntryEntity entity) {
