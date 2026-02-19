@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Gradle wrapper + build config
 COPY gradlew .
+RUN chmod +x gradlew
 COPY gradle gradle
 COPY build.gradle .
 
